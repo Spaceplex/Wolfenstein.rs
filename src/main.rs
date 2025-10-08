@@ -9,6 +9,12 @@ const WH: u32 = 512;
 const MAP_X: usize = 8;
 const MAP_Y: usize = 8;
 const MAP_S: i32 = 64; // cube size
+
+const PI2: f32 = PI/2.; // 90 degrees
+const PI3: f32 = (3.*PI)/2.; // 270 degrees
+
+
+
 const MAP: [i32; MAP_X * MAP_Y] = [
     1,1,1,1,1,1,1,1,
     1,0,1,0,0,0,0,1,
@@ -20,19 +26,21 @@ const MAP: [i32; MAP_X * MAP_Y] = [
     1,1,1,1,1,1,1,1,
 ];
 
-fn deg_to_rad(deg: i32) -> f32 {
-    (deg as f32) * PI / 180.0
+fn deg_to_rad(deg: f32) -> f32 {
+    (deg * PI) / 180.0
 }
+
 
 struct Player {
     px: f32,
     py: f32, 
-    pa: i32,
+    pa: f32,
     pdx: f32,
     pdy: f32
 }
+
 impl Player {
-    fn new(px: f32, py: f32, pa: i32) -> Self {
+    fn new(px: f32, py: f32, pa: f32) -> Self {
         let mut player = Player {px, py, pa, pdx: 0., pdy: 0.};
         player.update_delta();
         player
@@ -55,12 +63,12 @@ impl Player {
                 self.py -= self.pdy * 5.;
             }, 
             Keycode::A => {
-                self.pa += 5;
+                self.pa += 5.;
                 self.fix_angle();
                 self.update_delta();
             },
             Keycode::D => {
-                self.pa -= 5;
+                self.pa -= 5.;
                 self.fix_angle();
                 self.update_delta();
             }
@@ -68,11 +76,11 @@ impl Player {
         }
     }
     fn fix_angle(&mut self) {
-        while self.pa > 359 {
-            self.pa -= 360;
+        while self.pa > 359. {
+            self.pa -= 360.;
         }
-        while self.pa < 0 {
-            self.pa += 360;
+        while self.pa < 0. {
+            self.pa += 360.;
         }
     }
 }
@@ -120,63 +128,71 @@ fn draw_player_2d(canvas: &mut Canvas<Window>, player: &Player) -> Result<(), St
 }
 
 fn draw_rays_3d(canvas: &mut Canvas<Window>, player: &Player) -> Result<(), String> {
-
     // raycasting logic
-    let mut dof: i32 = 0;
-    let ra = deg_to_rad(player.pa);
-    let mut rx = player.px;
-    let mut ry = player.py;
-    let mut xo = 0.;
-    let mut yo = 0.;
-    let mut dis_v = 100000.;
-    let mut mx: i32 = 0;
-    let mut my: i32 = 0;
-    let mut mp: i32 = 0;
-    let limit = 1;
-    for r in 0..limit {
+    let mut mx: i32;
+    let mut my: i32;
+    let mut mp: i32;
+    let mut dof: i32;
+    let mut rx: f32 = 0.;
+    let mut ry: f32 = 0.;
+    let mut ra: f32 = player.pa;
+    let mut xo: f32 = 64.;
+    let mut yo: f32 = 64.;
+
+    for r in 0..1 {
+
+        let inv_tan = -deg_to_rad(ra);
+        // Check vertical
+        // Left btwen 90 and 270 degrees
+        if deg_to_rad(ra) > PI2 && deg_to_rad(ra) < PI3  {
+            rx = (((player.px as i32) >> 6) << 6) as f32 - 0.0001;
+            ry = (player.px - rx)*inv_tan + player.py;
+            xo = -64.;
+            yo = -xo * inv_tan;
+        }
+        if deg_to_rad(ra) < PI2 || deg_to_rad(ra) > PI3  {
+            rx = (((player.px as i32) >> 6) << 6) as f32 + 64.;
+            ry = (player.px - rx)*inv_tan + player.py;
+            xo = 64.;
+            yo = -yo * inv_tan;
+        }
+
+        // check horizontal
         dof = 0;
-        let a_tan = deg_to_rad(ra as i32).tan();
-        let a_cos = deg_to_rad(ra as i32).cos();
-
-        // Horizontal //
-        // left
-        if a_cos > 0.001 { 
-            rx = (((player.px as i32 >> 6) << 6) + MAP_S) as f32;
-            xo = MAP_S as f32;
+        // if ray is looking up
+        if(deg_to_rad(ra).sin()) > 0.001{
+            ry = ((player.py as i32 >> 6) << 6) as f32 - 0.0001;
+            rx = (player.py-ry)*inv_tan + player.px;
+            yo = -64.;
+            xo = -yo*inv_tan;
         }
-        // right
-        else if a_cos < -0.001 { 
-            rx = ((player.px as i32 >> 6) << 6) as f32 - 0.0001;
-            xo = -MAP_S as f32;
-        } else {
-            dof = MAP_X as i32;
+        if(deg_to_rad(ra).sin()) < -0.001{
+            ry = ((player.py as i32 >> 6) << 6) as f32 + 64.;
+            rx = (player.py-ry)*inv_tan + player.px;
+            yo = 64.;
+            xo = -xo*inv_tan;
         }
 
-        if dof < MAP_X as i32 {
-            ry = (player.px - rx) * a_tan + player.py;
-            yo = -xo * a_tan;
-        }
-
-        while dof < 8 {
-            mx = rx as i32 >> 6;
-            my = ry as i32 >> 6;
-            mp = my * (MAP_X as i32) + mx;
-
-            if mx >= 0 && mx < MAP_X as i32 && my >= 0 && my < MAP_Y as i32 && MAP[mp as usize] == 1 {
+        while dof < 8{
+            mx = (rx as i32) >> 6;
+            my = (ry as i32) >> 6;
+            mp = my*(MAP_X as i32) + mx;
+            if mp < MAP_X as i32 * MAP_Y as i32 && MAP[mp as usize] == 1 { // wall is hit
                 dof = 8;
-                dis_v = a_cos * (rx - player.px) - deg_to_rad(ra as i32).sin() * (ry - player.py);
             } else {
                 rx += xo;
                 ry += yo;
                 dof += 1;
             }
         }
-        canvas.set_draw_color(Color::RGB(0, 255, 0));
-        let _  = canvas.draw_line(
-            Point::new(player.px as i32, player.py as i32), 
-            Point::new(rx as i32, ry as i32), 
-        );
     }
+
+    canvas.set_draw_color(Color::RGB(0, 255, 0));
+    canvas.draw_line(
+        Point::new(player.px as i32, player.py as i32), 
+        Point::new(rx as i32, ry as i32), 
+    )?;
+
     Ok(())
 }
 
@@ -195,7 +211,7 @@ fn main() -> Result<(), String> {
         .build().map_err(|e| e.to_string())?;
 
     // 3. Player & event
-    let mut player = Player::new(150., 400., 90);
+    let mut player = Player::new(150., 400., 90.);
 
     let mut event_pump = sdl_context.event_pump()?;
 
