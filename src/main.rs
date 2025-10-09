@@ -1,4 +1,4 @@
-use std::f32::consts::PI;
+use std::{f32::consts::PI};
 
 use sdl2::{event::Event, keyboard::Keycode, pixels::Color, rect::{self, Point}, render::Canvas, video::Window};
 
@@ -9,11 +9,6 @@ const WH: u32 = 512;
 const MAP_X: usize = 8;
 const MAP_Y: usize = 8;
 const MAP_S: i32 = 64; // cube size
-
-const PI2: f32 = PI/2.; // 90 degrees
-const PI3: f32 = (3.*PI)/2.; // 270 degrees
-
-
 
 const MAP: [i32; MAP_X * MAP_Y] = [
     1,1,1,1,1,1,1,1,
@@ -127,6 +122,11 @@ fn draw_player_2d(canvas: &mut Canvas<Window>, player: &Player) -> Result<(), St
     Ok(())
 }
 
+fn dist(ax: f32, ay: f32, bx: f32, by: f32, ang: f32) -> f32 {
+    ((bx - ax).powi(2) + (by - ay).powi(2)).sqrt()
+
+}
+
 fn draw_rays_3d(canvas: &mut Canvas<Window>, player: &Player) -> Result<(), String> {
     // raycasting logic
     let mut mx: i32;
@@ -138,56 +138,101 @@ fn draw_rays_3d(canvas: &mut Canvas<Window>, player: &Player) -> Result<(), Stri
     let mut ra: f32 = player.pa;
     let mut xo: f32 = 64.;
     let mut yo: f32 = 64.;
+    let mut disV: f32 = 10000000000.;
+    let mut disH: f32 = 10000000000.;
+    let mut hx = 0.;
+    let mut hy = 0.;
+    let mut vx = 0.;
+    let mut vy = 0.;
 
     for r in 0..1 {
 
-        let inv_tan = -deg_to_rad(ra);
+        dof = 0;
+        let tan = deg_to_rad(ra).tan();
+        let sin = deg_to_rad(ra).sin();
+        let cos = deg_to_rad(ra).cos();
         // Check vertical
         // Left btwen 90 and 270 degrees
-        if deg_to_rad(ra) > PI2 && deg_to_rad(ra) < PI3  {
+        if  cos < -0.001 {
             rx = (((player.px as i32) >> 6) << 6) as f32 - 0.0001;
-            ry = (player.px - rx)*inv_tan + player.py;
+            ry = (player.px - rx)*tan + player.py;
             xo = -64.;
-            yo = -xo * inv_tan;
+            yo = -xo * tan;
         }
-        if deg_to_rad(ra) < PI2 || deg_to_rad(ra) > PI3  {
+        // Right *right*
+        else if cos > 0.001  {
             rx = (((player.px as i32) >> 6) << 6) as f32 + 64.;
-            ry = (player.px - rx)*inv_tan + player.py;
+            ry = (player.px - rx)*tan + player.py;
             xo = 64.;
-            yo = -yo * inv_tan;
+            yo = -xo * tan;
+        } else {
+            rx = player.px;
+            ry = player.py;
+            dof = 8;
         }
-
-        // check horizontal
-        dof = 0;
-        // if ray is looking up
-        if(deg_to_rad(ra).sin()) > 0.001{
-            ry = ((player.py as i32 >> 6) << 6) as f32 - 0.0001;
-            rx = (player.py-ry)*inv_tan + player.px;
-            yo = -64.;
-            xo = -yo*inv_tan;
-        }
-        if(deg_to_rad(ra).sin()) < -0.001{
-            ry = ((player.py as i32 >> 6) << 6) as f32 + 64.;
-            rx = (player.py-ry)*inv_tan + player.px;
-            yo = 64.;
-            xo = -xo*inv_tan;
-        }
-
-        while dof < 8{
-            mx = (rx as i32) >> 6;
-            my = (ry as i32) >> 6;
+        while dof < 8 {
+            mx = rx as i32 >> 6;
+            my = ry as i32 >> 6;
             mp = my*(MAP_X as i32) + mx;
-            if mp < MAP_X as i32 * MAP_Y as i32 && MAP[mp as usize] == 1 { // wall is hit
-                dof = 8;
+            if mp > 0 && mp < MAP_X as i32 * MAP_Y as i32 && MAP[mp as usize] == 1 {
+                dof = 8; // hit a wall
+                vx = rx;
+                vy = ry;
+                disV = dist(player.px, player.py, vx, vy, ra);
             } else {
                 rx += xo;
                 ry += yo;
                 dof += 1;
             }
         }
+
+        vx = rx;
+        vy = ry;
+
+        // check horizontal
+        // if ray is looking up
+        let tan =1.0 / tan;
+        dof = 0;
+        if(sin) > 0.001{
+            ry = ((player.py as i32 >> 6) << 6) as f32 - 0.0001;
+            rx = (player.py-ry)*tan + player.px;
+            yo = -64.;
+            xo = -yo*tan;
+        }
+        // sin is down
+        else if(sin) < -0.001{
+            ry = ((player.py as i32 >> 6) << 6) as f32 + 64.;
+            rx = (player.py-ry)*tan + player.px;
+            yo = 64.;
+            xo = -yo*tan;
+        } else {
+            rx = player.px;
+            ry = player.py;
+            dof = 8;
+        }
+
+        while dof < 8{
+            mx = (rx as i32) >> 6;
+            my = (ry as i32) >> 6;
+            mp = my*(MAP_X as i32) + mx;
+            if mp > 0 && mp < MAP_X as i32 * MAP_Y as i32 && MAP[mp as usize] == 1 { // wall is hit
+                dof = 8;
+                hx = rx;
+                hy = ry;
+                disH = dist(player.px, player.py, hx, hy, ra);
+            } else {
+                rx += xo;
+                ry += yo;
+                dof += 1;
+            }
+        }
+        if disV < disH {
+            rx = vx;
+            ry = vy;
+        }
     }
 
-    canvas.set_draw_color(Color::RGB(0, 255, 0));
+    canvas.set_draw_color(Color::RGB(255, 0, 0));
     canvas.draw_line(
         Point::new(player.px as i32, player.py as i32), 
         Point::new(rx as i32, ry as i32), 
