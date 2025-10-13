@@ -1,6 +1,6 @@
 use std::{f32::consts::PI};
 
-use sdl2::{event::Event, keyboard::Keycode, pixels::Color, rect::{self, Point}, render::Canvas, video::Window};
+use sdl2::{event::Event, keyboard::Keycode, pixels::Color, rect::{self, Point, Rect}, render::Canvas, video::Window};
 
 // constants and Map
 const WW: u32 = 512*2;
@@ -21,6 +21,8 @@ const MAP: [i32; MAP_X * MAP_Y] = [
     1,1,1,1,1,1,1,1,
 ];
 
+const TWOPI: f32 = 2. * PI;
+const DR: f32 = 0.0174533;
 fn deg_to_rad(deg: f32) -> f32 {
     (deg * PI) / 180.0
 }
@@ -135,24 +137,29 @@ fn draw_rays_3d(canvas: &mut Canvas<Window>, player: &Player) -> Result<(), Stri
     let mut dof: i32;
     let mut rx: f32 = 0.;
     let mut ry: f32 = 0.;
-    let mut ra: f32 = player.pa;
+    let mut ra: f32 = deg_to_rad(player.pa);
     let mut xo: f32 = 64.;
     let mut yo: f32 = 64.;
     let mut disV: f32 = 10000000000.;
     let mut disH: f32 = 10000000000.;
+    let mut disT: f32 = 0.;
     let mut hx = 0.;
     let mut hy = 0.;
     let mut vx = 0.;
     let mut vy = 0.;
 
-    for r in 0..1 {
-
+    ra += DR * 30.;
+    if ra < 0. { ra += TWOPI;}
+    if ra > TWOPI { ra -= TWOPI;}
+    for r in 0..60 {
+        disV = 10000000000.;
+        disH = 10000000000.;
         dof = 0;
-        let tan = deg_to_rad(ra).tan();
-        let sin = deg_to_rad(ra).sin();
-        let cos = deg_to_rad(ra).cos();
+        let tan = ra.tan();
+        let sin = ra.sin();
+        let cos = ra.cos();
         // Check vertical
-        // Left btwen 90 and 270 degrees
+        // Left 
         if  cos < -0.001 {
             rx = (((player.px as i32) >> 6) << 6) as f32 - 0.0001;
             ry = (player.px - rx)*tan + player.py;
@@ -191,7 +198,7 @@ fn draw_rays_3d(canvas: &mut Canvas<Window>, player: &Player) -> Result<(), Stri
 
         // check horizontal
         // if ray is looking up
-        let tan =1.0 / tan;
+        let tan = 1.0 / tan;
         dof = 0;
         if(sin) > 0.001{
             ry = ((player.py as i32 >> 6) << 6) as f32 - 0.0001;
@@ -229,14 +236,24 @@ fn draw_rays_3d(canvas: &mut Canvas<Window>, player: &Player) -> Result<(), Stri
         if disV < disH {
             rx = vx;
             ry = vy;
+            disT = disV;
+        } else {
+            disT = disH;
         }
+        canvas.set_draw_color(Color::RGB(255, 0, 0));
+        canvas.draw_line(
+            Point::new(player.px as i32, player.py as i32), 
+            Point::new(rx as i32, ry as i32), 
+        )?;
+        let mut lineH = (MAP_S * 320) as f32 / disT;
+        if lineH > 320. {lineH = 320.;}
+        // canvas.draw_line(Point::new(r*8+530, 0), Point::new(r*8+530, lineH as i32))?;
+        canvas.draw_rect(Rect::new(r*8 + 530, lineH as i32, 8, lineH as u32))?;
+        ra -= DR;
+        if ra < 0. { ra += TWOPI}
+        if ra > TWOPI { ra -= TWOPI}
     }
 
-    canvas.set_draw_color(Color::RGB(255, 0, 0));
-    canvas.draw_line(
-        Point::new(player.px as i32, player.py as i32), 
-        Point::new(rx as i32, ry as i32), 
-    )?;
 
     Ok(())
 }
@@ -280,8 +297,8 @@ fn main() -> Result<(), String> {
         canvas.clear();
 
         draw_map(&mut canvas)?;
-        draw_player_2d(&mut canvas, &player)?;
         draw_rays_3d(&mut canvas, &player)?;
+        draw_player_2d(&mut canvas, &player)?;
 
         // Present
         canvas.present();
